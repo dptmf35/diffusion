@@ -1,0 +1,95 @@
+{
+    "name": "modern_artificial_intelligence",
+    "phase": "train", // train or val
+    "gpu_ids": [
+        0
+    ],
+    "path": { //set the path
+        "log": "logs",
+        "tb_logger": "tb_logger",
+        "results": "results",
+        "checkpoint": "checkpoint",
+        "resume_state": null
+        // "resume_state": "/data/hyebin/experiments/modern_artificial_intelligence_240516_153352/checkpoint/I*****_E***" //pretrain model or training state
+    },
+    "datasets": {
+        "train": {
+            "name": "FFHQ",
+            "gt_dataset_path": "ffhq64",            // gt imgs folder location
+            "cond_dataset_path": "ffhq64_noise",    // cond imgs folder location
+            "dataroot":"train.txt",                 //train.txt location
+            "datatype": "img", 
+            "batch_size": 16,   // TODO (use 8 or 16)
+            "num_workers": 4,  // TODO: the number of cpu cores 
+            "use_shuffle": true
+        },
+        "val": {
+            "name": "FFHQ",
+            "gt_dataset_path": "ffhq64",           // gt imgs folder location
+            "cond_dataset_path": "ffhq64_noise",   // cond imgs folder location
+            "dataroot":"val.txt",                 // val.txt location
+            "datatype": "img", 
+            "batch_size": 16    // TODO (use 8 or 16)
+        },
+        "test": {
+            "name": "FFHQ",
+            "gt_dataset_path": "ffhq64",           // gt imgs folder location
+            "cond_dataset_path": "ffhq64_noise",   // cond imgs folder location
+            "dataroot":"test.txt",                 // test.txt location
+            "datatype": "img", 
+            "batch_size": 16    // TODO (use 8 or 16)
+        }
+    },
+    "model": {
+        "model_type": "conditional_ddpm", 
+        "finetune_norm": false,
+        "unet": {
+            "in_channel": 6,        // TODO
+            "out_channel": 3,       // TODO
+            "inner_channel": 64,     // TODO (use 32, 64, or 128)
+            "norm_groups": 16,
+            "channel_multiplier": [1,2,4,8],    // TODO (example: [1,2,4] / [1,2,4,8])
+            "attn_res": [16], // 16
+            "res_blocks": 1,
+            "dropout": 0
+        },
+        "beta_schedule": { 
+            "train": {
+                "schedule": "linear",
+                "n_timestep": 2000,
+                "linear_start": 1e-6,
+                "linear_end": 1e-2
+            },
+            "val": {
+                "schedule": "linear",
+                "n_timestep": 2000,
+                "linear_start": 1e-6,
+                "linear_end": 1e-2
+            }
+        },
+        "diffusion": {
+            "image_size": 64,
+            "channels": 3, 
+            "conditional": true, 
+            "loss_type": "l2"
+        }
+    },
+    "train": {
+        "n_iter": 1000000,
+        "val_freq": 20000,
+        "save_checkpoint_freq": 20000,
+        "print_freq": 50,
+        "optimizer": {
+            "type": "adam",
+            "lr": 2e-6
+        },
+        "ema_scheduler": { 
+            "step_start_ema": 5000,
+            "update_ema_every": 1,
+            "ema_decay": 0.9999
+        }
+    },
+    "wandb": {
+        "project": "modern_artificial_intelligence"
+    }
+}

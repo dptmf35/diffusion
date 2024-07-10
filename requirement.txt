@@ -1,0 +1,10 @@
+torch==2.1.0
+torchvision
+numpy
+tqdm
+lmdb
+opencv-python
+pillow
+tensorboardx
+wandb
+scikit-image
