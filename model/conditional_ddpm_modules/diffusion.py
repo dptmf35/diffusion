@@ -134,7 +134,10 @@ class GaussianDiffusion(nn.Module):
 
     def predict_start_from_noise(self, x_t, t, noise):
         ''' Hint: variable at "t" (use like "some_variable[t]") '''
-        return (x_t - self.sqrt_frac_gamma_min1[t] * noise) / self.sqrt_frac_gamma[t]
+        # Correct formula: x_0 = (x_t - sqrt(1-gamma)*noise) / sqrt(gamma)
+        # self.sqrt_frac_gamma[t] is 1/sqrt(gamma)
+        # self.sqrt_frac_gamma_min1[t] is sqrt(1/gamma - 1) = sqrt(1-gamma)/sqrt(gamma)
+        return self.sqrt_frac_gamma[t] * x_t - self.sqrt_frac_gamma_min1[t] * noise
         #######################
         ###       TODO      ###
         #######################
@@ -149,15 +152,19 @@ class GaussianDiffusion(nn.Module):
         return posterior_mean, log_posterior_var
 
  
-    def p_mean_variance(self, x, t, clip_denoised: bool, noisy_img=None): 
+    def p_mean_variance(self, x, t, clip_denoised: bool, condition=None): 
         batch_size = x.shape[0]
         noise_level = torch.FloatTensor(
             [self.sqrt_gamma_tmin1[t+1]]).repeat(batch_size, 1).to(x.device)
 
-        if noisy_img is not None:
-            x = torch.cat([noisy_img, x], dim=1)
-            x_recon = self.predict_start_from_noise(x, t=t, noise=self.diffusion_net(x, noise_level))
-            x_recon = x_recon[:, self.channels:, :, :]
+        if condition is not None:
+            # Concatenate condition and noisy state for model input
+            x_in = torch.cat([condition, x], dim=1)
+            # Predict noise
+            noise_pred = self.diffusion_net(x_in, noise_level)
+            # Predict x_0 from x_t (current noisy state) and predicted noise
+            x_recon = self.predict_start_from_noise(x, t=t, noise=noise_pred)
+            
             #######################
             ###       TODO      ###
             #######################
@@ -173,35 +180,43 @@ class GaussianDiffusion(nn.Module):
         return model_mean, log_posterior_var
 
     @torch.no_grad()
-    def p_sample(self, x, t, clip_denoised=True, noisy_img=None):
+    def p_sample(self, x, t, clip_denoised=True, condition=None):
         model_mean, log_model_var = self.p_mean_variance(
-            x=x, t=t, clip_denoised=clip_denoised, noisy_img=noisy_img)
+            x=x, t=t, clip_denoised=clip_denoised, condition=condition)
         noise = torch.randn_like(x) if t > 0 else torch.zeros_like(x)
         return model_mean + noise * (0.5 * log_model_var).exp()
 
     @torch.no_grad()
-    def p_sample_loop(self, x_in, noisy_img, continous=False):
+    def p_sample_loop(self, x_in, condition, continous=False):
         device = self.betas.device
 
-        x = noisy_img
-        shape = x.shape
-        img = torch.randn(shape, device=device)
+        # x_in is just a shape tuple here, but we use condition to determine batch size and shape
+        # Actually sample loop starts from pure noise
+        # condition is the condition image
+        
+        shape = condition.shape
+        img = torch.randn(shape, device=device) # x_T
+        
         for i in tqdm(reversed(range(0, self.timesteps_n)), desc='sampling time step', total=self.timesteps_n):
-            img = self.p_sample(img, i, noisy_img=x)
+            img = self.p_sample(img, i, condition=condition)
+            
         if continous:
             return img
         else:
-            return img[-1]
+            return img
 
     @torch.no_grad()
     def sample(self, batch_size=1, continous=False):
         image_size = self.image_size
         channels = self.channels
+        # This method is for unconditional sampling which this model might not support well given the changes
+        # But if it does, we need empty condition? Or random noise condition?
+        # Since we focused on conditional, I'll leave this as is but it might fail if condition is needed.
         return self.p_sample_loop((batch_size, channels, image_size, image_size), continous)
 
     @torch.no_grad()
-    def sampling(self, x_in, noisy_img, continous=False):
-        return self.p_sample_loop(x_in, noisy_img, continous) 
+    def sampling(self, x_in, condition, continous=False):
+        return self.p_sample_loop(x_in, condition, continous) 
 
     def q_sample(self, x_first, continuous_sqrt_gamma, noise=None):
         noise = default(noise, lambda: torch.randn_like(x_first))
@@ -237,6 +252,7 @@ class GaussianDiffusion(nn.Module):
             #######################
             ###       TODO      ###
             #######################
+            # noisy_img is the condition here (e.g. low res or noisy input)
             x_recon = self.diffusion_net(torch.cat([noisy_img, x_noisy], dim=1), continuous_sqrt_gamma)
         
         loss = self.loss_func(noise, x_recon)
@@ -245,4 +261,3 @@ class GaussianDiffusion(nn.Module):
 
     def forward(self, x_in, noisy_img, *args, **kwargs):
         return self.p_losses(x_in, noisy_img, *args, **kwargs) 
-
